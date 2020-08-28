@@ -1,6 +1,7 @@
 use tiberius::{AuthMethod, Client, Config};
 use tiberius::SqlBrowser;
 use tokio::net::TcpStream;
+// use async_std::net::TcpStream;
 use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 // use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -8,31 +9,28 @@ use serde::{Deserialize, Serialize};
 use docopt::Docopt;
 
 const USAGE: &'static str = "
-Naval Fate.
+nats-resgate-mssql-service.
 
 Usage:
-  resgate_mssql [--nats_uri=<kn>]
+  nats-resgate-mssql-service [--nats_uri=<uri>] [--host=<kn>] [--database=<kn>]  [--instance=<kn>]
 
 Options:
-  -h --help     Show this screen.
-  --version     Show version.
   --nats_uri=<kn>  Speed in knots [default: localhost:4222].
-  --host=<kn>  SQL host [default: localhost].
+  --host=<h>  SQL host [default: localhost].
   --database=<kn>  SQL database [default: nrm72kulga].
-  --instance=<kn>  SQL database [default: DE2012X64].
-  --drifting    Drifting mine.
+  --instance=<kn>  SQL database.
 ";
 
-#[derive(Debug, Deserialize)]
-struct Args {
-    flag_speed: isize,
-    flag_drifting: bool,
-    nats_uri: Vec<String>,
-    arg_x: Option<i32>,
-    arg_y: Option<i32>,
-    cmd_ship: bool,
-    cmd_mine: bool,
-}
+// #[derive(Debug, Deserialize)]
+// struct Args {
+//     flag_speed: isize,
+//     flag_drifting: bool,
+//     nats_uri: Vec<String>,
+//     arg_x: Option<i32>,
+//     arg_y: Option<i32>,
+//     cmd_ship: bool,
+//     cmd_mine: bool,
+// }
 
 #[derive(Serialize, Deserialize)]
 struct Model {
@@ -67,6 +65,7 @@ struct Data {
     params: String,
 }
 
+// #[async_std::main]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opts = nats::Options::new();
@@ -107,7 +106,6 @@ async fn main() -> anyhow::Result<()> {
     config.host(args.get_str("--host"));
 
     // The default port of SQL Browser
-    config.port(1433);
     config.database(args.get_str("--database"));
 
     config.trust_cert();
@@ -122,20 +120,29 @@ async fn main() -> anyhow::Result<()> {
     // // TcpStream to connect to the server.
     // let tcp = TcpStream::connect(config.get_addr()).await?;
 
-    // The name of the database server instance.
-    config.port(1434);
-    config.instance_name(args.get_str("--instance"));
-    // This will create a new `TcpStream` from `async-std`, connected to the
-    // right port of the named instance.
-    let tcp = TcpStream::connect_named(&config).await?;
-    // let mut client = Client::connect(config, tcp).await?;
-    // let tcp = TcpStream::connect(config.get_addr()).await?;
+    let instance: &str = args.get_str("--instance");
+    let tcp: TcpStream;
+    // let mut client: Client<TcpStream>;
+    println!("  instance: {}", instance);
+    if instance == "" {
+        config.port(1433);
+        tcp = TcpStream::connect(config.get_addr()).await?;
+    //   mut client = Client::connect(config, tcp).await?;
+    }
+    else {
+        // The name of the database server instance.
+        config.port(1434);
+        config.instance_name(instance);
+        // This will create a new `TcpStream` from `async-std`, connected to the
+        // right port of the named instance.
+        tcp = TcpStream::connect_named(&config).await?;
+    }
     // We'll disable the Nagle algorithm. Buffering is handled
     // internally with a `Sink`.
-    // tcp.set_nodelay(true)?;
+    tcp.set_nodelay(true)?;
+    let mut client = Client::connect(config, tcp.compat_write()).await?;
 
     // Handling TLS, login and other details related to the SQL Server.
-    let mut client = Client::connect(config, tcp.compat_write()).await?;
 
     let sub = nc.subscribe("call.example.model.sql")?;
     for msg in sub.messages() {
