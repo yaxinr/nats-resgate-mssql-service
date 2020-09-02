@@ -144,41 +144,81 @@ async fn main() -> anyhow::Result<()> {
 
     // Handling TLS, login and other details related to the SQL Server.
 
-    let sub = nc.subscribe("call.example.model.sql")?;
+    let sub = nc.subscribe("call.example.model.*")?;
     for msg in sub.messages() {
         println!("Received a {}", msg);
         let data: Data = serde_json::from_slice(&msg.data[..])?;
+        
+        let split = msg.subject.split(".");
+        let v:Vec<&str> = split.collect();
+        let method = v.last().unwrap().as_ref();
+        match method {
+            "exec" => {
+                let result = client.execute(data.params, &[]).await?;
 
-        let mut stream = client.simple_query(data.params).await?;
+                // As long as the `next_resultset` returns true, the stream has
+                // more results and can be polled. For each result set, the stream
+                // returns rows until the end of that result. In a case where
+                // `next_resultset` is true, polling again will return rows from
+                // the next query.
+                // result.rows_affected()
+                // assert!(stream.next_resultset());
+        
+                // In this case, we know we have only one query, returning one row
+                // and one column, so calling `into_row` will consume the stream
+                // and return us the first row of the first result.
+                let payload = format!("{}", result.total());
+                println!("{}", payload);
+        
+                let response = CallResponse {
+                    result: payload.to_owned(),
+                };
+        
+                // println!("response {}", &response);
+                let j = serde_json::to_vec(&response)?;
+                // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                // println!("Reply {}", j.to_string());
+                match msg.respond(j) {
+                    Ok(v) => println!("sended: {:?}", v),
+                    Err(e) => println!("error: {:?}", e),
+                }        
 
-        // As long as the `next_resultset` returns true, the stream has
-        // more results and can be polled. For each result set, the stream
-        // returns rows until the end of that result. In a case where
-        // `next_resultset` is true, polling again will return rows from
-        // the next query.
-        assert!(stream.next_resultset());
+            },
+            "simple_query" => println!("A teen"),
+            // Handle the rest of cases
+            _ => {
+                let mut stream = client.simple_query(data.params).await?;
 
-        // In this case, we know we have only one query, returning one row
-        // and one column, so calling `into_row` will consume the stream
-        // and return us the first row of the first result.
-        let row = stream.into_row().await?;
-
-        // assert_eq!(Some(-4i32), row.unwrap().get(0));
-        let r = row.unwrap();
-        let payload: &str = r.get(0).unwrap();
-        println!("{}", payload);
-
-        let response = CallResponse {
-            result: payload.to_owned(),
-        };
-
-        // println!("response {}", &response);
-        let j = serde_json::to_vec(&response)?;
-        // println!("Reply to {}", msg.reply.to_owned().unwrap());
-        // println!("Reply {}", j.to_string());
-        match msg.respond(j) {
-            Ok(v) => println!("sended: {:?}", v),
-            Err(e) => println!("error: {:?}", e),
+                // As long as the `next_resultset` returns true, the stream has
+                // more results and can be polled. For each result set, the stream
+                // returns rows until the end of that result. In a case where
+                // `next_resultset` is true, polling again will return rows from
+                // the next query.
+                assert!(stream.next_resultset());
+        
+                // In this case, we know we have only one query, returning one row
+                // and one column, so calling `into_row` will consume the stream
+                // and return us the first row of the first result.
+                let row = stream.into_row().await?;
+        
+                // assert_eq!(Some(-4i32), row.unwrap().get(0));
+                let r = row.unwrap();
+                let payload: &str = r.get(0).unwrap();
+                println!("{}", payload);
+        
+                let response = CallResponse {
+                    result: payload.to_owned(),
+                };
+        
+                // println!("response {}", &response);
+                let j = serde_json::to_vec(&response)?;
+                // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                // println!("Reply {}", j.to_string());
+                match msg.respond(j) {
+                    Ok(v) => println!("sended: {:?}", v),
+                    Err(e) => println!("error: {:?}", e),
+                }        
+            },
         }
     }
 
