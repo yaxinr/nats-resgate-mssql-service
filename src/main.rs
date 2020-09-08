@@ -147,6 +147,10 @@ async fn main() -> anyhow::Result<()> {
     let sub = nc.subscribe("call.example.model.*")?;
     for msg in sub.messages() {
         println!("Received a {}", msg);
+        match nc.publish(msg.reply.clone().unwrap_or_default().as_str(), "timeout:\"10000\"") {
+            Ok(v) => println!("sended: {:?}", v),
+            Err(e) => println!("error: {:?}", e),
+        }        
         let data: Data = serde_json::from_slice(&msg.data[..])?;
         
         let split = msg.subject.split(".");
