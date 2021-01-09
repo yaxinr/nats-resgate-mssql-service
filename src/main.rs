@@ -1,12 +1,25 @@
-use tiberius::SqlBrowser;
-use tiberius::{AuthMethod, Client, Config, FromSqlOwned};
+use once_cell::sync::Lazy;
+use std::env;
+use tiberius::{Client, Config, FromSqlOwned};
 use tokio::net::TcpStream;
-// use async_std::net::TcpStream;
 use tokio_util::compat::Tokio02AsyncWriteCompatExt;
-// use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-// use anyhow::Result;
+// use serde_json::Result;
 use docopt::Docopt;
+
+static CONN_STR: Lazy<String> = Lazy::new(|| {
+    env::var("CONNECTION_STRING").unwrap_or_else(|_| {
+        "server=tcp:localhost,1433;database=nrm72kulga;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
+    })
+});
+
+// use tiberius::SqlBrowser;
+// use tiberius::{AuthMethod, Client, Config, FromSqlOwned};
+// use tokio::net::TcpStream;
+// // use async_std::net::TcpStream;
+// use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+// // use futures::StreamExt;
+// use docopt::Docopt;
 
 const USAGE: &'static str = "
 nats-resgate-mssql-service.
@@ -74,11 +87,8 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|e| e.exit());
     println!("{:?}", args);
 
-    // You can conveniently access values with `get_{bool,count,str,vec}`
-    // functions. If the key doesn't exist (or if, e.g., you use `get_str` on
-    // a switch), then a sensible default value is returned.
     println!("\nSome values:");
-    println!("  NATS: {}", args.get_str("--nats_uri"));
+    println!(" NATS: {}", args.get_str("--nats_uri"));
 
     let nc = opts
         // .with_name("nats-box rust 1")
@@ -100,48 +110,43 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         });
 
-    let mut config = Config::new();
+        let config = Config::from_ado_string(&CONN_STR)?;
+    // println!("  host: {}", args.get_str("--host"));
+    // config.host(args.get_str("--host"));
 
-    println!("  host: {}", args.get_str("--host"));
-    config.host(args.get_str("--host"));
+    // // The default port of SQL Browser
+    // config.database(args.get_str("--database"));
 
-    // The default port of SQL Browser
-    config.database(args.get_str("--database"));
-
-    config.trust_cert();
+    // config.trust_cert();
 
     // // And from here on continue the connection process in a normal way.
     // let mut client = Client::connect(config, tcp).await?;
 
     // Using SQL Server authentication.
-    config.authentication(AuthMethod::sql_server("bot", "bot"));
+    // config.authentication(AuthMethod::sql_server("bot", "bot"));
 
     // // Taking the address from the configuration, using async-std's
     // // TcpStream to connect to the server.
     // let tcp = TcpStream::connect(config.get_addr()).await?;
 
-    let instance: &str = args.get_str("--instance");
+    // let instance: &str = args.get_str("--instance");
     let tcp: TcpStream;
     // let mut client: Client<TcpStream>;
-    println!("  instance: {}", instance);
-    if instance == "" {
-        config.port(1433);
+    // println!("  instance: {}", instance);
+    // if instance == "" {
+        // config.port(1433);
         tcp = TcpStream::connect(config.get_addr()).await?;
     //   mut client = Client::connect(config, tcp).await?;
-    } else {
-        // The name of the database server instance.
-        config.port(1434);
-        config.instance_name(instance);
-        // This will create a new `TcpStream` from `async-std`, connected to the
-        // right port of the named instance.
-        tcp = TcpStream::connect_named(&config).await?;
-    }
-    // We'll disable the Nagle algorithm. Buffering is handled
-    // internally with a `Sink`.
+    // } else {
+    //     // The name of the database server instance.
+    //     config.port(1434);
+    //     config.instance_name(instance);
+    //     // This will create a new `TcpStream` from `async-std`, connected to the
+    //     // right port of the named instance.
+    //     tcp = TcpStream::connect_named(&config).await?;
+    // }
     tcp.set_nodelay(true)?;
     let mut client = Client::connect(config, tcp.compat_write()).await?;
-
-    // Handling TLS, login and other details related to the SQL Server.
 
     let sub = nc.subscribe("call.example.model.*")?;
     for msg in sub.messages() {
