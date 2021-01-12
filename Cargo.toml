@@ -1,18 +1,18 @@
 [package]
 name = "nats-resgate-mssql-service"
-version = "0.1.0"
+version = "0.1.2"
 authors = ["Ramil Gilfanov <info@ramil.info>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tiberius = { version = "0.4", default-features=false, features=["chrono", "sql-browser-tokio"] }
+tiberius = { version = "0.5.1", default-features=false, features=["chrono", "sql-browser-tokio"] }
 anyhow = "1.0"
-futures = "0.3.5"
-tokio = { version = "0.2", features = [ "full"] }
-tokio-util = "0.3.1"
-nats="0.7.1"
+futures = "0.3"
+tokio = { version = "1.0.1", features = [ "full"] }
+tokio-util = "0.6.0"
+nats="=0.8.2"
 serde="*"
 serde_json = "1.0"
-docopt = "1.1.0"
+docopt = "1.1"
