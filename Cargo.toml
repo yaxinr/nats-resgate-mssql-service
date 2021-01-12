@@ -7,7 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tiberius = { version = "0.5.1", default-features=false, features=["chrono", "sql-browser-tokio"] }
 anyhow = "1.0"
 futures = "0.3"
 tokio = { version = "1.0.1", features = [ "full"] }
