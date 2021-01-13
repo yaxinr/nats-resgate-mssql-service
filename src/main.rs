@@ -262,7 +262,15 @@ async fn main() -> anyhow::Result<()> {
                                 }
                             }
                         }
-                        None => println!("none row"),
+                        None => {
+                            println!("none row");
+                            let response = CallResponse { result: String::from("none") };
+                            let j = serde_json::to_vec(&response)?;
+                            match msg.respond(j) {
+                                Ok(v) => println!("sended: {:?}", v),
+                                Err(e) => println!("error: {:?}", e),
+                            }
+                        },
                     }
                 }
             }
