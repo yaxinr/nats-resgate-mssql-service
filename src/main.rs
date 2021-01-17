@@ -1,6 +1,6 @@
 use nats::Message;
 
-use tiberius::{AuthMethod, Client, Config, FromSqlOwned};
+use tiberius::{AuthMethod, Client, Config, ExecuteResult, FromSqlOwned};
 use tokio::net::TcpStream;
 // use async_std::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
@@ -168,139 +168,158 @@ async fn main() -> anyhow::Result<()> {
     //     };
     // }
 
-    let sub = nc.subscribe("bar")?.with_handler(move |msg:Message|  {
-    println!("Received {}", &msg);
+    nc.subscribe("call.example.model.*")?.with_handler(move |msg: Message| {
+        println!("Received {}", &msg);
         match nc.publish(
             msg.reply.clone().unwrap_or_default().as_str(),
             "timeout:\"30000\"",
         ) {
             Err(e) => {
                 eprintln!("error: {:?}", e);
-            },
-            Ok(_) => {
-        let data: Data= serde_json::from_slice::<Data>(&msg.data[..])?.into();
-                tokio::spawn(async move {
-        let split = msg.subject.split(".");
-        let v: Vec<&str> = split.collect();
-        let method = v.last().unwrap().as_ref();
-        match method {
-            "exec" => {
-                let result = client.execute(data.params, &[]).await?;
-
-                // As long as the `next_resultset` returns true, the stream has
-                // more results and can be polled. For each result set, the stream
-                // returns rows until the end of that result. In a case where
-                // `next_resultset` is true, polling again will return rows from
-                // the next query.
-                // result.rows_affected()
-                // assert!(stream.next_resultset());
-                // In this case, we know we have only one query, returning one row
-                // and one column, so calling `into_row` will consume the stream
-                // and return us the first row of the first result.
-                let payload = format!("{}", result.total());
-                println!("{}", payload);
-                let response = CallResponse {
-                    result: payload.to_owned(),
-                };
-                // println!("response {}", &response);
-                let j = serde_json::to_vec(&response)?;
-                // println!("Reply to {}", msg.reply.to_owned().unwrap());
-                // println!("Reply {}", j.to_string());
-                match msg.respond(j) {
-                    Err(e) => eprintln!("error: {:?}", e),
-                    Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
-                }
             }
-            "simple_query" => println!("simple_query"),
-            _ =>   {
-                let mut stream = client.simple_query(data.params).await?;
+            Ok(_) => {
+                let data: Data = serde_json::from_slice::<Data>(&msg.data[..])?.into();
+                // tokio::spawn(async move 
+                    {
+                    let split = msg.subject.split(".");
+                    let v: Vec<&str> = split.collect();
+                    let method = v.last().unwrap().as_ref();
+                    match method {
+                        "exec" => {
+                            match futures::executor::block_on(client.execute(data.params, &[])) {
+                                Ok(result) => {
+                                    // let result = client.execute(data.params, &[]).await?;
 
-                // As long as the `next_resultset` returns true, the stream has
-                // more results and can be polled. For each result set, the stream
-                // returns rows until the end of that result. In a case where
-                // `next_resultset` is true, polling again will return rows from
-                // the next query.
-                // assert!(stream.next_resultset());
-                if stream.next_resultset() {
-                    // In this case, we know we have only one query, returning one row
-                    // and one column, so calling `into_row` will consume the stream
-                    // and return us the first row of the first result.
-                    let row = stream.into_row().await?;
-                    match row {
-                        Some(r) => {
-                            // let payload: &str = r.get(0).unwrap();
-                            for val in r.into_iter() {
-                                // assert_eq!(
-                                //     Some(String::from("test")),
-                                //     String::from_sql_owned(val)?
-                                // )
-                                // let pp = r.get(0);
-                                // let ss = String::from_sql_owned(pp);
-                                match String::from_sql_owned(val) {
-                                    Ok(payload_option) => {
-                                        // let payload: &str = payloadv.as_str();
-                                        match payload_option {
-                                            Some(payload) => {
-                                                println!("{}", payload);
-
-                                                let response = CallResponse { result: payload };
-
-                                                // println!("response {}", &response);
-                                                let j = serde_json::to_vec(&response)?;
-                                                // println!("Reply to {}", msg.reply.to_owned().unwrap());
-                                                // println!("Reply {}", j.to_string());
-                                                match msg.respond(j) {
-                                                    Ok(v) => println!("sended: {:?}", v),
-                                                    Err(e) => println!("error: {:?}", e),
+                                    // As long as the `next_resultset` returns true, the stream has
+                                    // more results and can be polled. For each result set, the stream
+                                    // returns rows until the end of that result. In a case where
+                                    // `next_resultset` is true, polling again will return rows from
+                                    // the next query.
+                                    // result.rows_affected()
+                                    // assert!(stream.next_resultset());
+                                    // In this case, we know we have only one query, returning one row
+                                    // and one column, so calling `into_row` will consume the stream
+                                    // and return us the first row of the first result.
+                                    let payload = format!("{}", result.total());
+                                    println!("{}", payload);
+                                    let response = CallResponse {
+                                        result: payload.to_owned(),
+                                    };
+                                    // println!("response {}", &response);
+                                    match serde_json::to_vec(&response) {
+                                        Ok(json) => {
+                                            // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                            // println!("Reply {}", j.to_string());
+                                            match msg.respond(json) {
+                                                Err(e) => eprintln!("error: {:?}", e),
+                                                Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                            }
+                                        }
+                                        Err(_) => {}
+                                    }
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                        // "simple_query" => println!("simple_query"),
+                        _ => {
+                            match futures::executor::block_on(client.simple_query(data.params)) {
+                                Ok(stream) => {
+                                    if stream.next_resultset() {
+                                        match futures::executor::block_on(stream.into_row()){
+                                            Ok(row) => {                                        match row {
+                                            Some(r) => {
+                                                // let payload: &str = r.get(0).unwrap();
+                                                for val in r.into_iter() {
+                                                    // assert_eq!(
+                                                    //     Some(String::from("test")),
+                                                    //     String::from_sql_owned(val)?
+                                                    // )
+                                                    // let pp = r.get(0);
+                                                    // let ss = String::from_sql_owned(pp);
+                                                    match String::from_sql_owned(val) {
+                                                        Ok(payload_option) => {
+                                                            // let payload: &str = payloadv.as_str();
+                                                            match payload_option {
+                                                                Some(payload) => {
+                                                                    println!("{}", payload);
+        
+                                                                    let response =
+                                                                        CallResponse { result: payload };
+        
+                                                                    // println!("response {}", &response);
+                                                                    match serde_json::to_vec(&response) {
+                                                                        Ok(json) => {
+                                                                            // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                                                            // println!("Reply {}", j.to_string());
+                                                                            match msg.respond(json) {
+                                                                                Err(e) => eprintln!("error: {:?}", e),
+                                                                                Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                                                            }
+                                                                        }
+                                                                        Err(_) => {}
+                                                                    }
+                                                                                                }
+                                                                None => {
+                                                                    println!("none value");
+                                                                    let response = CallResponse {
+                                                                        result: String::from("none"),
+                                                                    };
+                                                                    // "error": {
+                                                                    //     "code": "system.invalidParams",
+                                                                    //     "message": "Invalid parameters"
+                                                                    // }
+                                                                    // println!("response {}", &response);
+                                                                    match serde_json::to_vec(&response) {
+                                                                        Ok(json) => {
+                                                                            // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                                                            // println!("Reply {}", j.to_string());
+                                                                            match msg.respond(json) {
+                                                                                Err(e) => eprintln!("error: {:?}", e),
+                                                                                Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                                                            }
+                                                                        }
+                                                                        Err(_) => {}
+                                                                    }                                                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => println!("error: {:?}", e),
+                                                    }
                                                 }
                                             }
                                             None => {
-                                                println!("none value");
+                                                println!("none row");
                                                 let response = CallResponse {
                                                     result: String::from("none"),
                                                 };
-                                                // "error": {
-                                                //     "code": "system.invalidParams",
-                                                //     "message": "Invalid parameters"
-                                                // }
-                                                // println!("response {}", &response);
-                                                let j = serde_json::to_vec(&response)?;
-                                                // println!("Reply to {}", msg.reply.to_owned().unwrap());
-                                                // println!("Reply {}", j.to_string());
-                                                match msg.respond(j) {
-                                                    Ok(v) => println!("sended: {:?}", v),
-                                                    Err(e) => println!("error: {:?}", e),
+                                                match serde_json::to_vec(&response) {
+                                                    Ok(json) => {
+                                                        // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                                        // println!("Reply {}", j.to_string());
+                                                        match msg.respond(json) {
+                                                            Err(e) => eprintln!("error: {:?}", e),
+                                                            Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                                        }
+                                                    }
+                                                    Err(_) => {}
                                                 }
-                                            }
+                                                        }
+                                        }
+}
+                                            Err(_) => {}
                                         }
                                     }
-                                    Err(e) => println!("error: {:?}", e),
+        
                                 }
-                            }
-                        }
-                        None => {
-                            println!("none row");
-                            let response = CallResponse {
-                                result: String::from("none"),
-                            };
-                            let j = serde_json::to_vec(&response)?;
-                            match msg.respond(j) {
-                                Ok(v) => println!("sended: {:?}", v),
-                                Err(e) => println!("error: {:?}", e),
+                                Err(_) => {}
                             }
                         }
                     }
                 }
-        }
-            }      
-            Ok(())    
-            });
-            Ok(());
-        },
+            }
         }
         Ok(())
-    }
-);
+    });
     //     let data: Data = serde_json::from_slice(&msg.data[..])?;
     //     let split = msg.subject.split(".");
     //     let v: Vec<&str> = split.collect();
