@@ -171,7 +171,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         match nc.queue_subscribe("call.example.model.*", "mssql"){
             Ok(sub) => {
-                sub.with_handler(move |msg: Message| {
+                for msg in sub.messages() {
                     println!("Received {}", &msg);
                     match nc.publish(
                         msg.reply.clone().unwrap_or_default().as_str(),
@@ -213,15 +213,15 @@ async fn main() -> anyhow::Result<()> {
                                                     // println!("Reply to {}", msg.reply.to_owned().unwrap());
                                                     // println!("Reply {}", j.to_string());
                                                     match msg.respond(json) {
-                                                        Err(e) => Ok(()),
+                                                        Err(e) => Err(e),
                                                         // Ok(_) => {} 
-                                                        Ok(v) => Err(v),
+                                                        Ok(v) => Ok(()),
                                                     }
                                                 }
-                                                Err(_) => {}
+                                                Err(e) => Err(e.into())
                                             }
                                         }
-                                        Err(_) => {}
+                                        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, Box::new(e)) )
                                     }
                                 }
                                 // "simple_query" => println!("simple_query"),
@@ -256,13 +256,14 @@ async fn main() -> anyhow::Result<()> {
                                                                                     // println!("Reply to {}", msg.reply.to_owned().unwrap());
                                                                                     // println!("Reply {}", j.to_string());
                                                                                     match msg.respond(json) {
-                                                                                        Err(e) => eprintln!("error: {:?}", e),
-                                                                                        Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                                                                        Err(e) => Err(e),
+                                                                                        // Ok(_) => {} 
+                                                                                        Ok(v) => Ok(()),
                                                                                     }
                                                                                 }
-                                                                                Err(_) => {}
+                                                                                Err(e) => Err(e.into())
                                                                             }
-                                                                                                        }
+                                                                                                                                        }
                                                                         None => {
                                                                             println!("none value");
                                                                             let response = CallResponse {
@@ -278,13 +279,14 @@ async fn main() -> anyhow::Result<()> {
                                                                                     // println!("Reply to {}", msg.reply.to_owned().unwrap());
                                                                                     // println!("Reply {}", j.to_string());
                                                                                     match msg.respond(json) {
-                                                                                        Err(e) => eprintln!("error: {:?}", e),
-                                                                                        Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                                                                        Err(e) => Err(e),
+                                                                                        // Ok(_) => {} 
+                                                                                        Ok(v) => Ok(()),
                                                                                     }
                                                                                 }
-                                                                                Err(_) => {}
-                                                                            }                                                                                                }
-                                                                    }
+                                                                                Err(e) => Err(e.into())
+                                                                            }
+                                                                                                    }
                                                                 }
                                                                 Err(e) => {},
                                                             }
@@ -321,10 +323,12 @@ async fn main() -> anyhow::Result<()> {
                         }
                         Err(_) => {}
                     }
-                });
+                }
             }
-            Err(_) => {}
+        }
+            Err(e) => Err(e)
         }   
+    }
     });
 
     Ok(())
