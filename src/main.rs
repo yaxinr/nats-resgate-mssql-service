@@ -1,12 +1,12 @@
-use nats::{Message, Subscription};
+use nats::{Connection, Message, Subscription};
 
 use tiberius::{AuthMethod, Client, Config, ExecuteResult, FromSqlOwned};
-use tokio::net::TcpStream;
-// use async_std::net::TcpStream;
+// use tokio::net::TcpStream;
+use async_std::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 // use futures::StreamExt;
 use anyhow::Result;
-use docopt::Docopt;
+use docopt::{ArgvMap, Docopt};
 use serde::{Deserialize, Serialize};
 // use std::thread;
 
@@ -81,24 +81,26 @@ struct Data {
     params: String,
 }
 
-// #[async_std::main]
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+// const ARGS:  &ArgvMap;
+// #[tokio::main]
+#[async_std::main]
+async fn main() -> std::io::Result<()> {
     // let opts = nats::Options::new();
     let args = Docopt::new(USAGE)
         .and_then(|dopt| dopt.parse())
         .unwrap_or_else(|e| e.exit());
+    // const ARGS = args.clone();
+    let nats_url: &str = args.get_str("--nats_uri");
     println!("{:?}", args);
 
     println!("\nSome values:");
-    println!(" NATS: {}", args.get_str("--nats_uri"));
+    println!(" NATS: {}", nats_url);
 
-    // let nc = opts
-    // .with_name("nats-box rust 1")
-    let nc = nats::connect(args.get_str("--nats_uri"))?;
+    let nc_access = nats::connect(nats_url)?;
     println!("connected to NATS: {}", args.get_str("--nats_uri"));
 
-    nc.subscribe("access.example.model")?
+    nc_access
+        .subscribe("access.example.model")?
         .with_handler(move |msg| {
             println!("Received {}", &msg);
             let response = Access {
@@ -135,24 +137,23 @@ async fn main() -> anyhow::Result<()> {
     // let tcp = TcpStream::connect(config.get_addr()).await?;
 
     // let instance: &str = args.get_str("--instance");
-    let tcp: TcpStream;
-    // let mut client: Client<TcpStream>;
-    // println!("  instance: {}", instance);
-    // if instance == "" {
-    // config.port(1433);
-    tcp = TcpStream::connect(config.get_addr()).await?;
-    //   mut client = Client::connect(config, tcp).await?;
-    // } else {
-    //     // The name of the database server instance.
-    //     config.port(1434);
-    //     config.instance_name(instance);
-    //     // This will create a new `TcpStream` from `async-std`, connected to the
-    //     // right port of the named instance.
-    //     tcp = TcpStream::connect_named(&config).await?;
-    // }
-    tcp.set_nodelay(true)?;
-    let mut client: Client<tokio_util::compat::Compat<TcpStream>> =
-        Client::connect(config, tcp.compat_write()).await?;
+
+    // let tcp: TcpStream;
+    // // let mut client: Client<TcpStream>;
+    // // println!("  instance: {}", instance);
+    // // if instance == "" {
+    // // config.port(1433);
+    // tcp = TcpStream::connect(config.get_addr()).await?;
+    // //   mut client = Client::connect(config, tcp).await?;
+    // // } else {
+    // //     // The name of the database server instance.
+    // //     config.port(1434);
+    // //     config.instance_name(instance);
+    // //     // This will create a new `TcpStream` from `async-std`, connected to the
+    // //     // right port of the named instance.
+    // //     tcp = TcpStream::connect_named(&config).await?;
+    // // }
+    // tcp.set_nodelay(true)?;
 
     // let sub = nc.subscribe("call.example.model.*")?;
     // // .with_handler(move |msg| {
@@ -168,60 +169,106 @@ async fn main() -> anyhow::Result<()> {
     //     };
     // }
 
-    tokio::spawn(async move {
-        match nc.queue_subscribe("call.example.model.*", "mssql"){
-            Ok(sub) => {
-                for msg in sub.messages() {
-                    println!("Received {}", &msg);
-                    match nc.publish(
-                        msg.reply.clone().unwrap_or_default().as_str(),
-                        "timeout:\"30000\"",
-                    ) {
-                        Err(e) => {}
-                        Ok(()) => {
-                            let data: Data = serde_json::from_slice::<Data>(&msg.data[..])?.into();
-                            
-                            let split = msg.subject.split(".");
-                            let v: Vec<&str> = split.collect();
-                            let method = v.last().unwrap().as_ref();
-                            match method {
-                                "exec" => {
-                                    match futures::executor::block_on(client.execute(data.params, &[])) {
-                                        Ok(result) => {
-                                            // let result = client.execute(data.params, &[]).await?;
+    // let cfg_prt: &'static Config = &config;
 
-                                            let payload = format!("{}", result.total());
-                                            println!("{}", payload);
-                                            let response = CallResponse {
-                                                result: payload.to_owned(),
-                                            };
-                                            // println!("response {}", &response);
-                                            match serde_json::to_vec(&response) {
-                                                Ok(json) => {
-                                                    // println!("Reply to {}", msg.reply.to_owned().unwrap());
-                                                    // println!("Reply {}", j.to_string());
-                                                    match msg.respond(json) {
-                                                        Err(e) => Err(e),
-                                                        Ok(v) => Ok(()),
-                                                    }
-                                                }
-                                                Err(e) => Err(e.into)
-                                            }
-                                        }
-                                        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, Box::new(e)) )
-                                    }
-                                }
-                                // "simple_query" => println!("simple_query"),
-                                _ => {
-                                    match futures::executor::block_on(client.simple_query(data.params)) {
-                                        Ok(stream) => {
-                                            if stream.next_resultset() {
-                                                match futures::executor::block_on(stream.into_row()){
-                                                    Ok(row) => {
-                                                        match row {
-                                                            Some(r) => {
-                                                                for val in r.into_iter() {
-                                                                    match String::from_sql_owned(val) {
+    for i in 0..2 {
+        std::thread::spawn(move || {
+            let args = Docopt::new(USAGE)
+                .and_then(|dopt| dopt.parse())
+                .unwrap_or_else(|e| e.exit());
+            let config = mssql_config(args.to_owned());
+            // let tcp: TcpStream;
+            // let mut client: Client<TcpStream>;
+            // println!("  instance: {}", instance);
+            // if instance == "" {
+            // config.port(1433);
+            match futures::executor::block_on(TcpStream::connect(config.get_addr())) {
+                Err(e) => {
+                    println!("{}", e)
+                }
+                Ok(tcp) => {
+                    tcp.set_nodelay(true).unwrap();
+                    match futures::executor::block_on(Client::connect(config, tcp.compat_write())) {
+                        Err(_) => {}
+                        Ok(mut client) => {
+                            let nats_url: &str = args.get_str("--nats_uri");
+                            match nats::connect(nats_url) {
+                                Ok(nc) => {
+                                    match nc.queue_subscribe("call.example.model.*", "mssql") {
+                                        Ok(sub) => {
+                                            for msg in sub.messages() {
+                                                println!("Received {}", &msg);
+                                                match nc.publish(
+                                                    msg.reply.clone().unwrap_or_default().as_str(),
+                                                    "timeout:\"30000\"",
+                                                ) {
+                                                    Err(e) => {}
+                                                    Ok(()) => {
+                                                        match serde_json::from_slice::<Data>(
+                                                            &msg.data[..],
+                                                        ) {
+                                                            Ok(data) => {
+                                                                let split = msg.subject.split(".");
+                                                                let v: Vec<&str> = split.collect();
+                                                                let method =
+                                                                    v.last().unwrap().as_ref();
+                                                                match method {
+                                                                    "exec" => {
+                                                                        match futures::executor::block_on(
+                                                                    client
+                                                                        .execute(data.params, &[]),
+                                                                ) {
+                                                                    Ok(result) => {
+                                                                        // let result = client.execute(data.params, &[]).await?;
+
+                                                                        let payload = format!(
+                                                                            "{}",
+                                                                            result.total()
+                                                                        );
+                                                                        println!("{}", payload);
+                                                                        let response =
+                                                                            CallResponse {
+                                                                                result: payload
+                                                                                    .to_owned(),
+                                                                            };
+                                                                        // println!("response {}", &response);
+                                                                        match serde_json::to_vec(
+                                                                            &response,
+                                                                        ) {
+                                                                            Ok(json) => {
+                                                                                // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                                                                // println!("Reply {}", j.to_string());
+                                                                                match msg
+                                                                                    .respond(json)
+                                                                                {
+                                                                                    Err(e) => {}
+                                                                                    Ok(_) => {}
+                                                                                }
+                                                                            }
+                                                                            Err(e) => {}
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {}
+                                                                }
+                                                                    }
+                                                                    // "simple_query" => println!("simple_query"),
+                                                                    _ => {
+                                                                        match futures::executor::block_on(
+                                                                    client
+                                                                        .simple_query(data.params),
+                                                                ) {
+                                                                    Ok(mut stream) => {
+                                                                        if stream.next_resultset() {
+                                                                            match futures::executor::block_on(
+                                                                    stream.into_row(),
+                                                                ) {
+                                                                    Ok(row) => {
+                                                                        match row {
+                                                                            Some(r) => {
+                                                                                for val in
+                                                                                    r.into_iter()
+                                                                                {
+                                                                                    match String::from_sql_owned(val) {
                                                                         Ok(payload_option) => {
                                                                             match payload_option {
                                                                                 Some(payload) => {
@@ -234,14 +281,14 @@ async fn main() -> anyhow::Result<()> {
                                                                                             // println!("Reply to {}", msg.reply.to_owned().unwrap());
                                                                                             // println!("Reply {}", j.to_string());
                                                                                             match msg.respond(json) {
-                                                                                                Err(e) => Err(e),
+                                                                                                Err(e) => {},
                                                                                                 // Ok(_) => {} 
-                                                                                                Ok(v) => Ok(()),
+                                                                                                Ok(_) => {},
                                                                                             }
                                                                                         }
-                                                                                        Err(e) => Err(e.into())
+                                                                                        Err(e) => {}
                                                                                     }
-                                                                                                                                                }
+                                                                                }
                                                                                 None => {
                                                                                     println!("none value");
                                                                                     let response = CallResponse {
@@ -257,61 +304,96 @@ async fn main() -> anyhow::Result<()> {
                                                                                             // println!("Reply to {}", msg.reply.to_owned().unwrap());
                                                                                             // println!("Reply {}", j.to_string());
                                                                                             match msg.respond(json) {
-                                                                                                Err(e) => Err(e),
+                                                                                                Err(_) => {},
                                                                                                 // Ok(_) => {} 
-                                                                                                Ok(v) => Ok(()),
+                                                                                                Ok(_) => {},
                                                                                             }
                                                                                         }
-                                                                                        Err(e) => Err(e.into())
+                                                                                        Err(_) => {}
                                                                                     }
-                                                                                                            }
+                                                                                }
+                                                                            }
                                                                         }
                                                                         Err(e) => {},
                                                                     }
-                                                                }
-                                                            }
-                                                            }
-                                                            None => {
-                                                                println!("none row");
-                                                                let response = CallResponse {
-                                                                    result: String::from("none"),
-                                                                };
-                                                                match serde_json::to_vec(&response) {
-                                                                    Ok(json) => {
-                                                                        // println!("Reply to {}", msg.reply.to_owned().unwrap());
-                                                                        // println!("Reply {}", j.to_string());
-                                                                        match msg.respond(json) {
-                                                                            Err(e) => eprintln!("error: {:?}", e),
-                                                                            Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                                                                }
+                                                                            }
+                                                                            None => {
+                                                                                println!(
+                                                                                    "none row"
+                                                                                );
+                                                                                let response =
+                                                                            CallResponse {
+                                                                                result:
+                                                                                    String::from(
+                                                                                        "none",
+                                                                                    ),
+                                                                            };
+                                                                                match serde_json::to_vec(
+                                                                            &response,
+                                                                        ) {
+                                                                            Ok(json) => {
+                                                                                // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                                                                // println!("Reply {}", j.to_string());
+                                                                                match msg
+                                                                                    .respond(json)
+                                                                                {
+                                                                                    Err(_) => {}
+                                                                                    Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                                                                }
+                                                                            }
+                                                                            Err(_) => {}
+                                                                        }
+                                                                            }
                                                                         }
                                                                     }
                                                                     Err(_) => {}
                                                                 }
+                                                                        }
+                                                                    }
+                                                                    Err(_) => {}
+                                                                }
+                                                                    }
+                                                                }
                                                             }
+                                                            Err(_) => {}
+                                                        }
                                                     }
-                                                    Err(_) => {}
                                                 }
-                                                Err(_) => {}
-                                                }
-                
+                                            }
                                         }
                                         Err(_) => {}
                                     }
                                 }
+                                Err(_) => {}
                             }
                         }
                     }
                 }
             }
-        }
-            Err(e) => Err(e)
-        }   
+        });
     }
-    });
-
+    loop {}
     Ok(())
 }
 
+fn mssql_config(args: ArgvMap) -> Config {
+    let mut config = Config::new();
+    println!("  host: {}", args.get_str("--host"));
+    config.host(args.get_str("--host"));
+
+    // The default port of SQL Browser
+    config.database(args.get_str("--database"));
+
+    config.trust_cert();
+
+    // And from here on continue the connection process in a normal way.
+    // let mut client = Client::connect(config, tcp).await?;
+
+    // Using SQL Server authentication.
+    config.authentication(AuthMethod::sql_server("bot", "bot"));
+    config
+}
 // async fn f1(
 //     msg: Message,
 //     client: &Client<tokio_util::compat::Compat<TcpStream>>,
