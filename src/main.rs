@@ -177,9 +177,7 @@ async fn main() -> anyhow::Result<()> {
                         msg.reply.clone().unwrap_or_default().as_str(),
                         "timeout:\"30000\"",
                     ) {
-                        // Err(e) => {
-                        //     // eprintln!("error: {:?}", e);
-                        // }
+                        Err(e) => {}
                         Ok(()) => {
                             let data: Data = serde_json::from_slice::<Data>(&msg.data[..])?.into();
                             
@@ -192,16 +190,6 @@ async fn main() -> anyhow::Result<()> {
                                         Ok(result) => {
                                             // let result = client.execute(data.params, &[]).await?;
 
-                                            // As long as the `next_resultset` returns true, the stream has
-                                            // more results and can be polled. For each result set, the stream
-                                            // returns rows until the end of that result. In a case where
-                                            // `next_resultset` is true, polling again will return rows from
-                                            // the next query.
-                                            // result.rows_affected()
-                                            // assert!(stream.next_resultset());
-                                            // In this case, we know we have only one query, returning one row
-                                            // and one column, so calling `into_row` will consume the stream
-                                            // and return us the first row of the first result.
                                             let payload = format!("{}", result.total());
                                             println!("{}", payload);
                                             let response = CallResponse {
@@ -214,11 +202,10 @@ async fn main() -> anyhow::Result<()> {
                                                     // println!("Reply {}", j.to_string());
                                                     match msg.respond(json) {
                                                         Err(e) => Err(e),
-                                                        // Ok(_) => {} 
                                                         Ok(v) => Ok(()),
                                                     }
                                                 }
-                                                Err(e) => Err(e.into())
+                                                Err(e) => Err(e.into)
                                             }
                                         }
                                         Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, Box::new(e)) )
@@ -230,90 +217,82 @@ async fn main() -> anyhow::Result<()> {
                                         Ok(stream) => {
                                             if stream.next_resultset() {
                                                 match futures::executor::block_on(stream.into_row()){
-                                                    Ok(row) => {                                        match row {
-                                                    Some(r) => {
-                                                        // let payload: &str = r.get(0).unwrap();
-                                                        for val in r.into_iter() {
-                                                            // assert_eq!(
-                                                            //     Some(String::from("test")),
-                                                            //     String::from_sql_owned(val)?
-                                                            // )
-                                                            // let pp = r.get(0);
-                                                            // let ss = String::from_sql_owned(pp);
-                                                            match String::from_sql_owned(val) {
-                                                                Ok(payload_option) => {
-                                                                    // let payload: &str = payloadv.as_str();
-                                                                    match payload_option {
-                                                                        Some(payload) => {
-                                                                            println!("{}", payload);
-                
-                                                                            let response =
-                                                                                CallResponse { result: payload };
-                
-                                                                            // println!("response {}", &response);
-                                                                            match serde_json::to_vec(&response) {
-                                                                                Ok(json) => {
-                                                                                    // println!("Reply to {}", msg.reply.to_owned().unwrap());
-                                                                                    // println!("Reply {}", j.to_string());
-                                                                                    match msg.respond(json) {
-                                                                                        Err(e) => Err(e),
-                                                                                        // Ok(_) => {} 
-                                                                                        Ok(v) => Ok(()),
+                                                    Ok(row) => {
+                                                        match row {
+                                                            Some(r) => {
+                                                                for val in r.into_iter() {
+                                                                    match String::from_sql_owned(val) {
+                                                                        Ok(payload_option) => {
+                                                                            match payload_option {
+                                                                                Some(payload) => {
+                                                                                    println!("{}", payload);
+                                                                                    let response =
+                                                                                        CallResponse { result: payload };
+                                                                                    // println!("response {}", &response);
+                                                                                    match serde_json::to_vec(&response) {
+                                                                                        Ok(json) => {
+                                                                                            // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                                                                            // println!("Reply {}", j.to_string());
+                                                                                            match msg.respond(json) {
+                                                                                                Err(e) => Err(e),
+                                                                                                // Ok(_) => {} 
+                                                                                                Ok(v) => Ok(()),
+                                                                                            }
+                                                                                        }
+                                                                                        Err(e) => Err(e.into())
                                                                                     }
-                                                                                }
-                                                                                Err(e) => Err(e.into())
-                                                                            }
-                                                                                                                                        }
-                                                                        None => {
-                                                                            println!("none value");
-                                                                            let response = CallResponse {
-                                                                                result: String::from("none"),
-                                                                            };
-                                                                            // "error": {
-                                                                            //     "code": "system.invalidParams",
-                                                                            //     "message": "Invalid parameters"
-                                                                            // }
-                                                                            // println!("response {}", &response);
-                                                                            match serde_json::to_vec(&response) {
-                                                                                Ok(json) => {
-                                                                                    // println!("Reply to {}", msg.reply.to_owned().unwrap());
-                                                                                    // println!("Reply {}", j.to_string());
-                                                                                    match msg.respond(json) {
-                                                                                        Err(e) => Err(e),
-                                                                                        // Ok(_) => {} 
-                                                                                        Ok(v) => Ok(()),
+                                                                                                                                                }
+                                                                                None => {
+                                                                                    println!("none value");
+                                                                                    let response = CallResponse {
+                                                                                        result: String::from("none"),
+                                                                                    };
+                                                                                    // "error": {
+                                                                                    //     "code": "system.invalidParams",
+                                                                                    //     "message": "Invalid parameters"
+                                                                                    // }
+                                                                                    // println!("response {}", &response);
+                                                                                    match serde_json::to_vec(&response) {
+                                                                                        Ok(json) => {
+                                                                                            // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                                                                            // println!("Reply {}", j.to_string());
+                                                                                            match msg.respond(json) {
+                                                                                                Err(e) => Err(e),
+                                                                                                // Ok(_) => {} 
+                                                                                                Ok(v) => Ok(()),
+                                                                                            }
+                                                                                        }
+                                                                                        Err(e) => Err(e.into())
                                                                                     }
-                                                                                }
-                                                                                Err(e) => Err(e.into())
-                                                                            }
-                                                                                                    }
+                                                                                                            }
+                                                                        }
+                                                                        Err(e) => {},
+                                                                    }
                                                                 }
-                                                                Err(e) => {},
                                                             }
-                                                        }
+                                                            }
+                                                            None => {
+                                                                println!("none row");
+                                                                let response = CallResponse {
+                                                                    result: String::from("none"),
+                                                                };
+                                                                match serde_json::to_vec(&response) {
+                                                                    Ok(json) => {
+                                                                        // println!("Reply to {}", msg.reply.to_owned().unwrap());
+                                                                        // println!("Reply {}", j.to_string());
+                                                                        match msg.respond(json) {
+                                                                            Err(e) => eprintln!("error: {:?}", e),
+                                                                            Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+                                                                        }
+                                                                    }
+                                                                    Err(_) => {}
+                                                                }
+                                                            }
                                                     }
-                                                    None => {
-                                                        println!("none row");
-                                                        let response = CallResponse {
-                                                            result: String::from("none"),
-                                                        };
-                                                        match serde_json::to_vec(&response) {
-                                                            Ok(json) => {
-                                                                // println!("Reply to {}", msg.reply.to_owned().unwrap());
-                                                                // println!("Reply {}", j.to_string());
-                                                                match msg.respond(json) {
-                                                                    Err(e) => eprintln!("error: {:?}", e),
-                                                                    Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
-                                                                }
-                                                            }
-                                                            Err(_) => {}
-                                                        }
-                                                                }
-                                                }
-        }
                                                     Err(_) => {}
                                                 }
-                                            }
+                                                Err(_) => {}
+                                                }
                 
                                         }
                                         Err(_) => {}
@@ -321,7 +300,6 @@ async fn main() -> anyhow::Result<()> {
                                 }
                             }
                         }
-                        Err(_) => {}
                     }
                 }
             }
