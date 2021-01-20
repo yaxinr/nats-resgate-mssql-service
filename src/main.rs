@@ -2,14 +2,17 @@ use nats::{Connection, Message, Subscription};
 
 use tiberius::{AuthMethod, Client, Config, ExecuteResult, FromSqlOwned};
 // use tokio::net::TcpStream;
-use async_std::net::TcpStream;
-use tokio_util::compat::TokioAsyncWriteCompatExt;
+// use tokio_util::compat::TokioAsyncWriteCompatExt;
 // use futures::StreamExt;
 use anyhow::Result;
 use docopt::{ArgvMap, Docopt};
 use serde::{Deserialize, Serialize};
-// use std::thread;
-
+use async_std::{
+    io::BufReader,
+    net::{TcpListener, TcpStream, ToSocketAddrs},
+    prelude::*,
+    task,
+};
 // static CONN_STR: Lazy<String> = Lazy::new(|| {
 //     env::var("CONNECTION_STRING").unwrap_or_else(|_| {
 //         "server=tcp:localhost,1433;database=nrm72kulga;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
@@ -81,10 +84,14 @@ struct Data {
     params: String,
 }
 
-// const ARGS:  &ArgvMap;
-// #[tokio::main]
-#[async_std::main]
-async fn main() -> std::io::Result<()> {
+// // main
+// fn run() -> Result<()> {
+//     let fut = accept_loop("127.0.0.1:8080");
+//     task::block_on(fut)
+// }
+// #[async_std::main]
+// async 
+fn main() -> std::io::Result<()> {
     // let opts = nats::Options::new();
     let args = Docopt::new(USAGE)
         .and_then(|dopt| dopt.parse())
@@ -97,7 +104,7 @@ async fn main() -> std::io::Result<()> {
     println!(" NATS: {}", nats_url);
 
     let nc_access = nats::connect(nats_url)?;
-    println!("connected to NATS: {}", args.get_str("--nats_uri"));
+    println!("connected to NATS: {}", nats_url);
 
     nc_access
         .subscribe("access.example.model")?
@@ -171,7 +178,7 @@ async fn main() -> std::io::Result<()> {
 
     // let cfg_prt: &'static Config = &config;
 
-    for i in 0..2 {
+    for i in 0..5 {
         std::thread::spawn(move || {
             let args = Docopt::new(USAGE)
                 .and_then(|dopt| dopt.parse())
@@ -188,16 +195,18 @@ async fn main() -> std::io::Result<()> {
                 }
                 Ok(tcp) => {
                     tcp.set_nodelay(true).unwrap();
-                    match futures::executor::block_on(Client::connect(config, tcp.compat_write())) {
-                        Err(_) => {}
+                    match futures::executor::block_on(Client::connect(config, tcp)) {
+                        Err(e) => {println!("{}", e)}
                         Ok(mut client) => {
                             let nats_url: &str = args.get_str("--nats_uri");
                             match nats::connect(nats_url) {
+                                Err(e) => {println!("{}", e)}
                                 Ok(nc) => {
+                                    println!("{} connected to NATS: {}", i, nats_url);
                                     match nc.queue_subscribe("call.example.model.*", "mssql") {
                                         Ok(sub) => {
                                             for msg in sub.messages() {
-                                                println!("Received {}", &msg);
+                                                println!("Received in {} {}", i, &msg);
                                                 match nc.publish(
                                                     msg.reply.clone().unwrap_or_default().as_str(),
                                                     "timeout:\"30000\"",
@@ -365,7 +374,6 @@ async fn main() -> std::io::Result<()> {
                                         Err(_) => {}
                                     }
                                 }
-                                Err(_) => {}
                             }
                         }
                     }

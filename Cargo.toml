@@ -10,8 +10,8 @@ edition = "2018"
 tiberius = { version = "0.5.1", default-features=false, features=["chrono", "sql-browser-tokio"] }
 anyhow = "1.0"
 futures = "0.3"
-tokio = { version = "1.0.1", features = [ "full"] }
-tokio-util = "0.6.0"
+# tokio = { version = "1.0.1", features = [ "full"] }
+# tokio-util = "0.6.0"
 nats="=0.8.2"
 serde="*"
 serde_json = "1.0"
