@@ -1,17 +1,15 @@
+use std::{ thread::{sleep}, time};
+
 use nats::{Connection, Message, Subscription};
 
 use tiberius::{AuthMethod, Client, Config, ExecuteResult, FromSqlOwned};
 // use tokio::net::TcpStream;
 // use tokio_util::compat::TokioAsyncWriteCompatExt;
 // use futures::StreamExt;
-use anyhow::Result;
 use docopt::{ArgvMap, Docopt};
 use serde::{Deserialize, Serialize};
 use async_std::{
-    io::BufReader,
-    net::{TcpListener, TcpStream, ToSocketAddrs},
-    prelude::*,
-    task,
+    net::{TcpStream},
 };
 // static CONN_STR: Lazy<String> = Lazy::new(|| {
 //     env::var("CONNECTION_STRING").unwrap_or_else(|_| {
@@ -381,8 +379,7 @@ fn main() -> std::io::Result<()> {
             }
         });
     }
-    loop {}
-    Ok(())
+    loop { sleep(time::Duration::new(999999,0))}
 }
 
 fn mssql_config(args: ArgvMap) -> Config {
