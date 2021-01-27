@@ -1,4 +1,4 @@
-use std::{ thread::{sleep}, time};
+use std::{ thread::{sleep}, time, process};
 
 use nats::{Connection, Message, Subscription};
 
@@ -189,7 +189,8 @@ fn main() -> std::io::Result<()> {
             // config.port(1433);
             match futures::executor::block_on(TcpStream::connect(config.get_addr())) {
                 Err(e) => {
-                    println!("{}", e)
+                    eprintln!("{}", e);
+                    process::exit(1);
                 }
                 Ok(tcp) => {
                     tcp.set_nodelay(true).unwrap();
@@ -209,7 +210,7 @@ fn main() -> std::io::Result<()> {
                                                     msg.reply.clone().unwrap_or_default().as_str(),
                                                     "timeout:\"30000\"",
                                                 ) {
-                                                    Err(e) => {}
+                                                    Err(_e) => {}
                                                     Ok(()) => {
                                                         match serde_json::from_slice::<Data>(
                                                             &msg.data[..],
@@ -379,7 +380,7 @@ fn main() -> std::io::Result<()> {
             }
         });
     }
-    loop { sleep(time::Duration::new(999999,0))}
+    loop { sleep(time::Duration::new(9,0))}
 }
 
 fn mssql_config(args: ArgvMap) -> Config {
