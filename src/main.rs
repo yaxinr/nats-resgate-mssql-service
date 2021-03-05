@@ -297,25 +297,27 @@ fn exec_sql_method(method: &str, client: &mut Client<TcpStream>, data: Data, msg
                         process::exit(1);
                     }
                 }
-                Err(e) => match e {
-                    tiberius::error::Error::Io { kind, message } => {
-                        eprintln!("{}", message);
-                        process::exit(1);
+                Err(e) => {
+                    eprintln!("{}", e);
+                    call_msg_respond(msg, format!("{}", e).as_str());
+                    match e {
+                        tiberius::error::Error::Io { kind, message } => {
+                            // eprintln!("{}", message);
+                            sleep(time::Duration::new(9, 0));
+                            process::exit(1);
+                        }
+                        // tiberius::error::Error::Protocol(_) => {}
+                        // tiberius::error::Error::Encoding(_) => {}
+                        // tiberius::error::Error::Conversion(_) => {}
+                        // tiberius::error::Error::Utf8 => {}
+                        // tiberius::error::Error::Utf16 => {}
+                        // tiberius::error::Error::ParseInt(_) => {}
+                        // tiberius::error::Error::Server(te) => {}
+                        // tiberius::error::Error::Tls(_) => {}
+                        // tiberius::error::Error::Routing { host, port } => {}
+                        _ => {}
                     }
-                    // tiberius::error::Error::Protocol(_) => {}
-                    // tiberius::error::Error::Encoding(_) => {}
-                    // tiberius::error::Error::Conversion(_) => {}
-                    // tiberius::error::Error::Utf8 => {}
-                    // tiberius::error::Error::Utf16 => {}
-                    // tiberius::error::Error::ParseInt(_) => {}
-                    // tiberius::error::Error::Server(te) => {}
-                    // tiberius::error::Error::Tls(_) => {}
-                    // tiberius::error::Error::Routing { host, port } => {}
-                    _ => {
-                        eprintln!("{}", e);
-                        call_msg_respond(msg, format!("{}", e).as_str());
-                    }
-                },
+                }
             }
         }
     }
