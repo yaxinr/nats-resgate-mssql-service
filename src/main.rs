@@ -1,14 +1,15 @@
 use std::{process, thread::sleep, time};
 
-use nats::{Connection, Message, Subscription};
+use nats::Message;
 
-use tiberius::{error::TokenError, AuthMethod, Client, Config, ExecuteResult, FromSqlOwned};
+use tiberius::{AuthMethod, Client, Config, FromSqlOwned};
 // use tokio::net::TcpStream;
 // use tokio_util::compat::TokioAsyncWriteCompatExt;
 // use futures::StreamExt;
 use async_std::net::TcpStream;
 use docopt::{ArgvMap, Docopt};
 use serde::{Deserialize, Serialize};
+// use url::form_urlencoded::parse;
 // static CONN_STR: Lazy<String> = Lazy::new(|| {
 //     env::var("CONNECTION_STRING").unwrap_or_else(|_| {
 //         "server=tcp:localhost,1433;database=nrm72kulga;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
@@ -76,7 +77,7 @@ struct Access {
     result: ResultAccess,
 }
 #[derive(Deserialize)]
-struct Data {
+struct DataParams {
     params: String,
 }
 
@@ -208,13 +209,13 @@ fn main() -> std::io::Result<()> {
                                         Ok(sub) => {
                                             for msg in sub.messages() {
                                                 println!("Received in {} {}", i, &msg);
-                                                match nc.publish(
-                                                    msg.reply.clone().unwrap_or_default().as_str(),
-                                                    "timeout:\"30000\"",
-                                                ) {
-                                                    Err(_e) => {}
+                                                match msg.respond("timeout:\"30000\"") {
+                                                    Err(e) => {
+                                                        eprintln!("{}", e);
+                                                        process::exit(1);
+                                                    }
                                                     Ok(()) => {
-                                                        match serde_json::from_slice::<Data>(
+                                                        match serde_json::from_slice::<DataParams>(
                                                             &msg.data[..],
                                                         ) {
                                                             Ok(data) => {
@@ -226,7 +227,7 @@ fn main() -> std::io::Result<()> {
                                                                 exec_sql_method(
                                                                     method,
                                                                     &mut client,
-                                                                    data,
+                                                                    &data.params,
                                                                     &msg,
                                                                 );
                                                             }
@@ -236,7 +237,10 @@ fn main() -> std::io::Result<()> {
                                                 }
                                             }
                                         }
-                                        Err(_) => {}
+                                        Err(e) => {
+                                            eprintln!("{}", e);
+                                            process::exit(1);
+                                        }
                                     }
                                 }
                             }
@@ -251,73 +255,89 @@ fn main() -> std::io::Result<()> {
     }
 }
 
-fn exec_sql_method(method: &str, client: &mut Client<TcpStream>, data: Data, msg: &Message) {
-    match method {
-        "exec" => match futures::executor::block_on(client.execute(data.params, &[])) {
+fn exec_sql_method(method: &str, client: &mut Client<TcpStream>, sql_text: &str, msg: &Message) {
+    println!("{}", sql_text);
+    // let sql_decoded: String = parse(sql_text.as_bytes())
+    //     .map(|(key, val)| [key, val].concat())
+    //     .collect();
+    // println!("{}", sql_decoded);
+    let r: Result<(), tiberius::error::Error> = match method {
+        "exec" => match futures::executor::block_on(client.execute(sql_text, &[])) {
             Ok(result) => {
                 let count = result.total().to_string();
-                call_msg_respond(msg, count.as_str())
+                call_msg_respond(msg, count.as_str());
+                Ok(())
             }
-            Err(e) => {}
+            Err(e) => Err(e),
         },
         // "simple_query" => println!("simple_query"),
-        _ => {
-            match futures::executor::block_on(client.simple_query(data.params)) {
-                Ok(mut stream) => {
-                    if stream.next_resultset() {
-                        match futures::executor::block_on(stream.into_row()) {
-                            Ok(row) => match row {
-                                Some(r) => {
-                                    for val in r.into_iter() {
-                                        match String::from_sql_owned(val) {
-                                            Ok(payload_option) => match payload_option {
-                                                Some(payload) => {
-                                                    call_msg_respond(msg, payload.as_str());
-                                                }
-                                                None => {
-                                                    println!("none value");
-                                                    call_msg_respond(msg, "none");
-                                                }
-                                            },
-                                            Err(e) => {}
+        _ => match futures::executor::block_on(client.simple_query(sql_text)) {
+            Ok(mut stream) => {
+                if stream.next_resultset() {
+                    match futures::executor::block_on(stream.into_row()) {
+                        Ok(row) => match row {
+                            Some(r) => {
+                                for val in r.into_iter() {
+                                    match String::from_sql_owned(val) {
+                                        Ok(payload_option) => match payload_option {
+                                            Some(payload) => {
+                                                call_msg_respond(msg, payload.as_str());
+                                            }
+                                            None => {
+                                                println!("none value");
+                                                call_msg_respond(msg, "none");
+                                            }
+                                        },
+                                        Err(e) => {
+                                            eprintln!("{}", e);
+                                            process::exit(1);
                                         }
                                     }
                                 }
-                                None => {
-                                    call_msg_respond(msg, "none");
-                                }
-                            },
-                            Err(e) => {
-                                eprintln!("{}", e);
-                                process::exit(1);
+                                Ok(())
                             }
-                        }
-                    } else {
-                        eprintln!("{}", false);
-                        process::exit(1);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    call_msg_respond(msg, format!("{}", e).as_str());
-                    match e {
-                        tiberius::error::Error::Io { kind, message } => {
-                            // eprintln!("{}", message);
-                            sleep(time::Duration::new(9, 0));
+                            None => {
+                                call_msg_respond(msg, "none");
+                                Ok(())
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("{}", e);
                             process::exit(1);
                         }
-                        // tiberius::error::Error::Protocol(_) => {}
-                        // tiberius::error::Error::Encoding(_) => {}
-                        // tiberius::error::Error::Conversion(_) => {}
-                        // tiberius::error::Error::Utf8 => {}
-                        // tiberius::error::Error::Utf16 => {}
-                        // tiberius::error::Error::ParseInt(_) => {}
-                        // tiberius::error::Error::Server(te) => {}
-                        // tiberius::error::Error::Tls(_) => {}
-                        // tiberius::error::Error::Routing { host, port } => {}
-                        _ => {}
                     }
+                } else {
+                    eprintln!("{}", false);
+                    process::exit(1);
                 }
+            }
+            Err(e) => Err(e),
+        },
+    };
+    match r {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{}", e);
+            call_msg_respond(msg, format!("{}", e).as_str());
+            match e {
+                tiberius::error::Error::Io {
+                    kind: _,
+                    message: _,
+                } => {
+                    // eprintln!("{}", message);
+                    sleep(time::Duration::new(9, 0));
+                    process::exit(1);
+                }
+                // tiberius::error::Error::Protocol(_) => {}
+                // tiberius::error::Error::Encoding(_) => {}
+                // tiberius::error::Error::Conversion(_) => {}
+                // tiberius::error::Error::Utf8 => {}
+                // tiberius::error::Error::Utf16 => {}
+                // tiberius::error::Error::ParseInt(_) => {}
+                // tiberius::error::Error::Server(te) => {}
+                // tiberius::error::Error::Tls(_) => {}
+                // tiberius::error::Error::Routing { host, port } => {}
+                _ => {}
             }
         }
     }
@@ -332,14 +352,22 @@ fn call_msg_respond(msg: &Message, result: &str) {
             // println!("Reply {}", j.to_string());
             msg_respond(&msg, json);
         }
-        Err(_) => {}
+        Err(e) => {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
     }
 }
 
 fn msg_respond(msg: &Message, json: Vec<u8>) {
-    match msg.respond(json) {
-        Err(_) => {}
-        Ok(_) => {} // Ok(v) => println!("sended: {:?}", v),
+    match msg.respond(&json) {
+        Err(e) => {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
+        Ok(_) => {
+            // println!("sended: {:?}", &json);
+        } // Ok(v) => println!("sended: {:?}", v),
     }
 }
 
