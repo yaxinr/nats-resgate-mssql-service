@@ -301,10 +301,7 @@ fn exec_sql_method(method: &str, client: &mut Client<TcpStream>, sql_text: &str,
                                 Ok(())
                             }
                         },
-                        Err(e) => {
-                            eprintln!("{}", e);
-                            process::exit(1);
-                        }
+                        Err(e) => Err(e),
                     }
                 } else {
                     eprintln!("{}", false);
@@ -317,7 +314,7 @@ fn exec_sql_method(method: &str, client: &mut Client<TcpStream>, sql_text: &str,
     match r {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("{}", e);
+            eprintln!("exec_sql_method:{}", e);
             call_msg_respond(msg, format!("{}", e).as_str());
             match e {
                 tiberius::error::Error::Io {
@@ -344,7 +341,7 @@ fn exec_sql_method(method: &str, client: &mut Client<TcpStream>, sql_text: &str,
 }
 
 fn call_msg_respond(msg: &Message, result: &str) {
-    println!("{}", result);
+    println!("call_msg_respond:{}", result);
     let response = CallResponse { result };
     match serde_json::to_vec(&response) {
         Ok(json) => {
